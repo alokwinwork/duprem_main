@@ -1,28 +1,34 @@
-from flask import Flask, request
-import requests
-import json
+from flask import Flask, request, jsonify
+import json_to_csv
+import remove_duplicates
+import csv_to_json
 
 app = Flask(__name__)
 
-@app.route("/", methods=["POST"])
-def main():
-    data = request.get_json()
-    url = "http://validate-json:8080/validate"
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(url, data=json.dumps(data), headers=headers)
-    if r.status_code != 200:
-        return {"error": "Invalid JSON format"}, 400
+@app.route('/', methods=['POST'])
+def process_json_input():
+    # Get the JSON input data from the request body
+    json_input = request.json
 
-    url = "http://convert-to-csv:8080/convert"
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(url, data=json.dumps(data), headers=headers)
-    csv_data = r.json()["csv_data"]
+    # Validate the JSON input
+    # Assumes that the validation logic is implemented in a separate microservice
+    # and can be accessed via the 'validate-service' endpoint
+    validate_service_url = "http://validate-service:5001/"
+    response = requests.post(validate_service_url, json=json_input)
+    if not response.ok:
+        return jsonify(error="Invalid JSON input"), 400
 
-    url = "http://remove-duplicates:8080/remove_duplicates"
-    headers = {"Content-Type": "text/csv"}
-    r = requests.post(url, data=csv_data, headers=headers)
-    csv_data = r.content.decode()
+    # Convert the JSON input to CSV
+    csv_data = json_to_csv.convert(json_input)
 
-    url = "http://convert-to-json:8080/convert"
-    headers = {"Content-Type": "text/csv"}
-    r = requests.post(url, data=csv_data, headers
+    # Remove duplicates from the CSV data
+    deduplicated_csv_data = remove_duplicates.remove_duplicates(csv_data)
+
+    # Convert the deduplicated CSV data back to JSON
+    json_output = csv_to_json.convert(deduplicated_csv_data)
+
+    # Return the JSON output
+    return jsonify(json_output), 200
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0')
