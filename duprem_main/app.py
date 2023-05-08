@@ -1,34 +1,36 @@
-from flask import Flask, request, jsonify
-####import json_to_csv
-####import remove_duplicates
-####import csv_to_json
+import requests
+import json
 
-app = Flask(__name__)
+# Step 1: Take input in JSON
+json_input = {"firstname": "Mukesh", "lastname": "Srivastava", "age": 20, "gender": "male"}
 
-@app.route('/', methods=['POST'])
-def process_json_input():
-    # Get the JSON input data from the request body
-    json_input = request.json
+# Step 2: Send JSON to json-validate microservice
+response = requests.post('http://json-validate:8080/validate', json=json_input)
 
-    # Validate the JSON input
-    # Assumes that the validation logic is implemented in a separate microservice
-    # and can be accessed via the 'validate-service' endpoint
-    validate_service_url = "http://validate-service:5001/"
-    response = requests.post(validate_service_url, json=json_input)
-    if not response.ok:
-        return jsonify(error="Invalid JSON input"), 400
+if response.status_code == 200:
+    # Step 3: Send validated JSON to change_to_csv microservice
+    csv_response = requests.post('http://change_to_csv:8080/convert', json=json_input)
 
-    # Convert the JSON input to CSV
-    ####csv_data = json_to_csv.convert(json_input)
+    if csv_response.status_code == 200:
+        # Step 4: Get response in CSV from change_to_csv microservice
+        csv_data = csv_response.json()
 
-    # Remove duplicates from the CSV data
-    ####deduplicated_csv_data = remove_duplicates.remove_duplicates(csv_data)
+        # Step 5: Send CSV response to remove_duplicate microservice
+        dedup_response = requests.post('http://remove_duplicate:8080/remove_duplicate', json=csv_data)
 
-    # Convert the deduplicated CSV data back to JSON
-    ####json_output = csv_to_json.convert(deduplicated_csv_data)
+        if dedup_response.status_code == 200:
+            # Step 6: Send deduplicated CSV response to convert_to_json microservice
+            json_response = requests.post('http://convert_to_json:8080/convert', json=dedup_response.json())
 
-    # Return the JSON output
-    ####return jsonify(json_output), 200
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+            if json_response.status_code == 200:
+                # Step 7: Get final JSON response and print output
+                output = json_response.json()
+                print(output)
+            else:
+                print('Error converting CSV to JSON')
+        else:
+            print('Error removing duplicates from CSV')
+    else:
+        print('Error converting JSON to CSV')
+else:
+    print('Invalid JSON input')
