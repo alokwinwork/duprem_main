@@ -1,36 +1,44 @@
+from flask import Flask, request, jsonify
 import requests
-import json
 
-# Step 1: Take input in JSON
-json_input = {"firstname": "Mukesh", "lastname": "Srivastava", "age": 20, "gender": "male"}
+app = Flask(__name__)
 
-# Step 2: Send JSON to json-validate microservice
-response = requests.post('http://json-validate:8080/validate', json=json_input)
+# Set up the URLs for the microservices
+json_validate_url = "http://json-validate-service:8001"
+change_to_csv_url = "http://change-to-csv-service:8002"
+remove_duplicate_url = "http://remove-duplicate-service:8003"
+convert_to_json_url = "http://convert-to-json-service:8004"
 
-if response.status_code == 200:
-    # Step 3: Send validated JSON to change_to_csv microservice
-    csv_response = requests.post('http://change_to_csv:8080/convert', json=json_input)
+@app.route("/process", methods=["POST"])
+def process_input():
+    # Get the JSON input from the request body
+    json_input = request.get_json()
 
-    if csv_response.status_code == 200:
-        # Step 4: Get response in CSV from change_to_csv microservice
-        csv_data = csv_response.json()
+    # Validate the JSON input using the json-validate microservice
+    response = requests.post(json_validate_url, json=json_input)
+    if response.status_code != 200:
+        return "Error: Invalid JSON input"
 
-        # Step 5: Send CSV response to remove_duplicate microservice
-        dedup_response = requests.post('http://remove_duplicate:8080/remove_duplicate', json=csv_data)
+    # Convert the JSON input to CSV using the change-to-csv microservice
+    response = requests.post(change_to_csv_url, json=json_input)
+    if response.status_code != 200:
+        return "Error: Could not convert input to CSV"
 
-        if dedup_response.status_code == 200:
-            # Step 6: Send deduplicated CSV response to convert_to_json microservice
-            json_response = requests.post('http://convert_to_json:8080/convert', json=dedup_response.json())
+    # Remove duplicates from the CSV using the remove-duplicate microservice
+    csv_data = response.json()
+    response = requests.post(remove_duplicate_url, json=csv_data)
+    if response.status_code != 200:
+        return "Error: Could not remove duplicates from CSV"
 
-            if json_response.status_code == 200:
-                # Step 7: Get final JSON response and print output
-                output = json_response.json()
-                print(output)
-            else:
-                print('Error converting CSV to JSON')
-        else:
-            print('Error removing duplicates from CSV')
-    else:
-        print('Error converting JSON to CSV')
-else:
-    print('Invalid JSON input')
+    # Convert the CSV data back to JSON using the convert-to-json microservice
+    csv_data = response.json()
+    response = requests.post(convert_to_json_url, json=csv_data)
+    if response.status_code != 200:
+        return "Error: Could not convert CSV data to JSON"
+
+    # Return the final JSON output to the client
+    json_output = response.json()
+    return jsonify(json_output)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
